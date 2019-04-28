@@ -4,12 +4,19 @@
 (provide (rename-out [golfscript-module-begin #%module-begin]))
 (provide (matching-identifiers-out #rx"^gs-" (all-defined-out)))
 
+;;; Rquires for gs-~ definition.
+(require golfscript/parser golfscript/tokenizer brag/support)
+
 ;;; Global data and data types.
 (define stack empty)
 (define globals (make-hash))
 (define builtins (make-hash))
 (define undefined-var 'undefined)
 (struct stack-mark (id))
+
+;; For eval we need a namespace anchor.
+(define-namespace-anchor gs)
+(define gs-namespace (namespace-anchor->namespace gs))
 
 ;;; Module begin.
 (define-macro (golfscript-module-begin PROGRAM)
@@ -46,8 +53,7 @@
                (set! return-list (cons top return-list))
                (set! top (gs-pop! #:return-stack-mark? #t)))
         (gs-push! return-list)
-        ;; Get rid of the stack mark.
-        (gs-pop!)))))
+        ))))
 
 (define-macro (gs-assignment EXPR (gs-var VAR))
   (syntax/loc caller-stx
@@ -128,3 +134,12 @@
 (hash-set! builtins "+" gs-+)
 (hash-set! builtins "-" gs--)
 (hash-set! builtins "*" gs-*)
+
+(define (gs-~)
+  (let ([arg (gs-pop!)])
+    (cond
+      [(number? arg) (gs-push! (bitwise-not arg))]
+      [(string? arg) (eval (parse-to-datum (apply-tokenizer make-tokenizer arg))
+                           gs-namespace)]
+      [(procedure? arg) (arg)]
+      [(list? arg) (for ([i (in-list arg)]) (gs-push! i))])))
