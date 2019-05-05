@@ -1,11 +1,14 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
-#lang br/quicklang
+#lang br
 
-(provide (rename-out [golfscript-module-begin #%module-begin]))
+(provide (rename-out [golfscript-module-begin #%module-begin]
+                     [golfscript-top #%top]))
+(provide #%app #%datum #%top-interaction require)
 (provide (matching-identifiers-out #rx"^gs-" (all-defined-out)))
 
 ;;; Rquires for gs-~ definition.
 (require golfscript/parser golfscript/tokenizer brag/support)
+(require racket/block)
 
 ;;; Global data and data types.
 (define stack empty)
@@ -23,13 +26,18 @@
   #'(#%module-begin
      PROGRAM))
 
+;;; Top
+;; Alter top level undefined behavior. Ignore undefined variables.
+(define-macro (golfscript-top . ID)
+  (if (identifier-binding #'ID) #'ID #'(void)))
+
 ;;; Syntax
 (define-macro (gs-program EXPR ...)
   ;; Vars are self-evaluating so all we need to do is display the stack.
   (syntax/loc caller-stx
-    (begin
-      EXPR ...
-      (gs-display-stack))))
+    (block
+     EXPR ...
+     (gs-display-stack))))
 
 (define-macro (gs-var VAR)
   (syntax/loc caller-stx (gs-val VAR)))
@@ -40,28 +48,29 @@
 (define-macro (gs-block EXPR ...)
   (syntax/loc caller-stx (gs-push! (lambda () EXPR ...))))
 
-(define-macro (gs-list EXPR ...)
-  ;; Mark stack position, and pop everything between it and top of stack.
-  (syntax/loc caller-stx
-    (let ([mymark (gensym)])
-      (gs-push! (stack-mark mymark))
-      EXPR ...
-      ;; Pop until we reach mymark.
-      (let ([top (gs-pop! #:return-stack-mark? #t)]
-            [return-list empty])
-        (until (and (stack-mark? top) (equal? (stack-mark-id top) mymark))
-               (set! return-list (cons top return-list))
-               (set! top (gs-pop! #:return-stack-mark? #t)))
-        (gs-push! return-list)
-        ))))
+(define-macro-cases gs-list
+  [(gs-list "[")
+   ;; Mark stack position, and pop everything between it and top of stack.
+   (syntax/loc caller-stx
+     (gs-push! (stack-mark (gensym))))]
+  [(gs-list "]")
+   ;; Pop until we reach a stack mark or stack is empty.
+   (syntax/loc caller-stx
+     (let ([top (gs-pop! #:return-stack-mark? #t)]
+           [return-list empty])
+       (until (or (empty? stack) (stack-mark? top))
+              (set! return-list (cons top return-list))
+              (set! top (gs-pop! #:return-stack-mark? #t)))
+       ;; If the last pop was a stack-mark ignore it, but if not, add it in.
+       (when (not (stack-mark? top))
+         (set! return-list (cons top return-list)))
+       (gs-push! return-list)))])
 
 (define-macro (gs-assignment EXPR (gs-var VAR))
   (syntax/loc caller-stx
     (begin
       EXPR
-      (let ([value (gs-pop!)])
-        (hash-set! globals VAR value)
-        (gs-push! value)))))
+      (define VAR (gs-peek)))))
 
 (define-macro (gs-comment COMMENT)
   #'(void))
@@ -72,16 +81,15 @@
   (display stack))
 
 (define (gs-val a-var)
-  (let ([value (hash-ref globals a-var 'undefined)])
-    (cond
-      [(procedure? value) (value)]
-      ;; Numbers have their literal value as their default value.
-      [(number? a-var) (gs-push! a-var)]
-      ;; Undefined variables may have a default builtin value.
-      [(and (equal? 'undefined value) (gs-builtin? a-var)) (gs-builtin! a-var)]
-      ;; Undefined values are ignored. Otherwise we push the new vlaue to the stack.
-      [(not (equal? 'undefined value)) (gs-push! value)]
-      )))
+  (display "gs-val ")
+  (writeln a-var)
+  (cond
+    [(procedure? a-var) (a-var)]
+    ;; Numbers have their literal value as their default value.
+    [(number? a-var) (gs-push! a-var)]
+    ;; Undefined values are ignored. Otherwise we push the new vlaue to the stack.
+    [(not (void? a-var)) (gs-push! a-var)]
+    ))
 
 (define (stack-height) (length stack))
 
@@ -110,6 +118,9 @@
           (gs-push! mark))
         top)))
 
+(define (gs-peek)
+  (first stack))
+
 (define (gs-builtin? a-var)
   (hash-has-key? builtins a-var))
 
@@ -121,6 +132,13 @@
 ;;; It's not explicit in the tutorial, but args are ordered left to right, not
 ;;; in the order they are popped. So in a two argument function, the second argument
 ;;; is at the top of the stack.
+
+;; Builtins shadow base names, so rename on export.
+(provide (rename-out [gs-+ +]
+                     [gs-- -]
+                     [gs-* *]
+                     [gs-~ ~]))
+  
 (define (gs-+)
   (define second (gs-pop!))
   (gs-push! (+ (gs-pop!) second)))
@@ -130,10 +148,6 @@
 (define (gs-*)
   (define second (gs-pop!))
   (gs-push! (* (gs-pop!) second)))
-
-(hash-set! builtins "+" gs-+)
-(hash-set! builtins "-" gs--)
-(hash-set! builtins "*" gs-*)
 
 (define (gs-~)
   (let ([arg (gs-pop!)])

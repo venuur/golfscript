@@ -13,7 +13,7 @@
    ;; words--original regex: [a-zA-Z_][a-zA-Z0-9_]*
    [(:seq (:+ (:or letters "_"))
           (:* (:or letters "_" digits)))
-    (token 'WORD lexeme)]
+    (token 'WORD (string->symbol lexeme))]
    ;; strings--original regex part: '(?:\\.|[^'])*'?|\"(?:\\.|[^\"])*\"?
    [(:or (from/to "\"" "\"") (from/to "'" "'"))
     (token 'STRING (substring lexeme 1 (sub1 (string-length lexeme))))]
@@ -36,5 +36,5 @@
     (token 'NEWLINE lexeme #:skip? #t)]
    ;; symbols (any single character except newlines)--original regex part: ."
    [(:~ (char-set "\r\n"))
-    (token 'SYMBOL lexeme)]
+    (token 'SYMBOL (string->symbol lexeme))]
    ))
