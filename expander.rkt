@@ -113,7 +113,7 @@
   (syntax/loc caller-stx
     (begin
       EXPR
-      (define VAR (gs-peek)))))
+      (define VAR (gs-peek gs-stack)))))
 
 (define-macro (gs-comment COMMENT)
   #'(void))
@@ -174,8 +174,8 @@
     ))
 
 
-(define (gs-peek)
-  (first (gs-stack)))
+(define (gs-peek a-stack)
+  (first (a-stack)))
 
 (define (gs-builtin? a-var)
   (hash-has-key? builtins a-var))
@@ -193,6 +193,8 @@
 (provide (rename-out [gs-tilde ~]
                      [gs-backtick |`|]
                      [gs-! !]
+                     [gs-@ |@|]
+                     [gs-$ $]
                      [gs-+ +]
                      [gs-- -]
                      [gs-* *]
@@ -237,6 +239,30 @@
         (and (gs-block-data? arg) (equal? (gs-block-data-repr arg) "{}")))
     1
     0)))
+
+(define (gs-$ a-stack)
+  (define top (gs-peek a-stack))
+  (cond
+    ; list block or string block. Sort by block as key function.
+    [(gs-block-data? top)
+     (let-values ([(arg2 arg1) (values (gs-pop! a-stack) (gs-pop! a-stack))])
+       (let* ([key-proc (gs-block-data-proc arg2)]
+              [cmp (λ (x y) (gs-lt (key-proc) (key-proc)))])
+         (cond
+           [(string? arg1)
+            (gs-push! a-stack (list->string (sort (string->list arg1) cmp)))]
+           [(list? arg1) (gs-push! a-stack (sort arg1 cmp))])))]
+    ; integer. Index value off stack and copy to top.
+    [else (begin
+            (define arg (gs-pop! a-stack))
+            (last (take (a-stack) arg)))]))
+
+(define (gs-@ a-stack)
+  (define-values (arg3 arg2 arg1)
+    (values (gs-pop! a-stack) (gs-pop! a-stack) (gs-pop! a-stack)))
+  (gs-push! a-stack arg2)
+  (gs-push! a-stack arg3)
+  (gs-push! a-stack arg1))
   
   (define (gs-+ gs-stack)
     (define second (gs-pop! gs-stack))

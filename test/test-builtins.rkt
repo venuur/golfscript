@@ -25,3 +25,5 @@
 (check-builtin "test-gs-exclamation04.rkt" "1")
 (check-builtin "test-gs-exclamation05.rkt" "1")
 (check-builtin "test-gs-exclamation06.rkt" "1")
+(check-builtin "test-gs-at01.rkt" "1342")
+(check-builtin "test-gs-comment01.rkt" "")
