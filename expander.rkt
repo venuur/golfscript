@@ -55,12 +55,19 @@
 (define-macro (gs-string STRING)
   (syntax/loc caller-stx (gs-push! gs-stack STRING)))
 
-(define-macro (gs-block EXPR ...)
-  (syntax/loc caller-stx
-    (gs-push! gs-stack
-              (gs-block-data
-               (lambda () EXPR ...)
-               (gs-block-repr (gs-block EXPR ...))))))
+(define-macro-cases gs-block
+  [(gs-block EXPR ...+)
+   (syntax/loc caller-stx
+     (gs-push! gs-stack
+               (gs-block-data
+                (lambda () EXPR ...+)
+                (gs-block-repr (gs-block EXPR ...+)))))]
+  [(gs-block)
+   (syntax/loc caller-stx
+     (gs-push! gs-stack
+               (gs-block-data
+                (lambda () (void))
+                (gs-block-repr (gs-block)))))])
 
 (define-macro-cases gs-block-repr
   [(gs-block-repr (gs-block EXPR ...))
@@ -119,11 +126,16 @@
   (define result
     (string-trim
      (with-output-to-string
-       (λ () (until (empty? (gs-stack)) (display (gs-pop!  gs-stack)))))
+       (λ () (until (empty? (gs-stack)) (gs-display (gs-pop!  gs-stack)))))
      "\""))
   (displayln "RESULT")
   (displayln result)
   result)
+
+(define (gs-display value)
+  (if (gs-block-data? value)
+      (display (gs-block-data-repr value))
+      (display value)))
 
 (define (stack-height) (length (gs-stack)))
 
