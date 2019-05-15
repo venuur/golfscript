@@ -56,12 +56,12 @@
   (syntax/loc caller-stx (gs-push! gs-stack STRING)))
 
 (define-macro-cases gs-block
-  [(gs-block EXPR ...+)
+  [(gs-block EXPR1 EXPRN ...)
    (syntax/loc caller-stx
      (gs-push! gs-stack
                (gs-block-data
-                (lambda () EXPR ...+)
-                (gs-block-repr (gs-block EXPR ...+)))))]
+                (lambda () EXPR1 EXPRN ...)
+                (gs-block-repr (gs-block EXPR1 EXPRN ...)))))]
   [(gs-block)
    (syntax/loc caller-stx
      (gs-push! gs-stack
