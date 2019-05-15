@@ -15,3 +15,7 @@
 (check-builtin "test-gs-tilde02.rkt" "3")
 (check-builtin "test-gs-tilde03.rkt" "123")
 (check-builtin "test-gs-tilde04.rkt" "3")
+(check-builtin "test-gs-backtick01.rkt" "1")
+(check-builtin "test-gs-backtick02.rkt" "[1 [2] \"asdf\"]")
+(check-builtin "test-gs-backtick03.rkt" "\"1\"")
+(check-builtin "test-gs-backtick04.rkt" "{1}")

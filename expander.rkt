@@ -116,8 +116,11 @@
 (define (gs-display-stack)
   ;Stack must be reversed to display with top on right.
   (gs-stack (reverse (gs-stack)))
-  (define result (with-output-to-string
-                   (λ () (until (empty? (gs-stack)) (display (gs-pop!  gs-stack))))))
+  (define result
+    (string-trim
+     (with-output-to-string
+       (λ () (until (empty? (gs-stack)) (display (gs-pop!  gs-stack)))))
+     "\""))
   (displayln "RESULT")
   (displayln result)
   result)
@@ -198,7 +201,6 @@
   (let ([arg (gs-pop! gs-stack)])
     (cond
       [(number? arg) (gs-push! gs-stack (bitwise-not arg))]
-      
       [(string? arg) (eval `(gs-eval ,@(cdr (parse-to-datum (apply-tokenizer make-tokenizer arg)))))]
       [(gs-block-data? arg) ((gs-block-data-proc arg))]
       [(list? arg) (for ([i (in-list arg)]) (gs-push! gs-stack i))])))
