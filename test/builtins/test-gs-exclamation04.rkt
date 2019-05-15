@@ -1,0 +1,2 @@
+#lang golfscript
+0!

@@ -190,23 +190,13 @@
 ;;; is at the top of the stack.
 
 ;; Builtins shadow base names, so rename on export.
-(provide (rename-out [gs-+ +]
+(provide (rename-out [gs-tilde ~]
+                     [gs-backtick |`|]
+                     [gs-! !]
+                     [gs-+ +]
                      [gs-- -]
                      [gs-* *]
-                     [gs-tilde ~]
-                     [gs-backtick |`|]))
-  
-(define (gs-+ gs-stack)
-  (define second (gs-pop! gs-stack))
-  (define first (gs-pop! gs-stack))
-  (println `(gs-+ ,first ,second))
-  (gs-push! gs-stack (+ first second)))
-(define (gs-- gs-stack)
-  (define second (gs-pop! gs-stack))
-  (gs-push! gs-stack (- (gs-pop! gs-stack) second)))
-(define (gs-* gs-stack)
-  (define second (gs-pop! gs-stack))
-  (gs-push! gs-stack (* (gs-pop! gs-stack) second)))
+                     ))
 
 (define (gs-tilde gs-stack)
   (writeln "gs-tilde")
@@ -235,3 +225,28 @@
     [(list? arg) (string-append "["
                                 (string-join (map gs-string-repr arg) " ")
                                 "]")]))
+
+(define (gs-! a-stack)
+  (define arg (gs-pop! a-stack))
+  (gs-push!
+   a-stack
+   (if
+    (or (equal? arg 0)
+        (equal? arg empty)
+        (equal? arg "")
+        (and (gs-block-data? arg) (equal? (gs-block-data-repr arg) "{}")))
+    1
+    0)))
+  
+  (define (gs-+ gs-stack)
+    (define second (gs-pop! gs-stack))
+    (define first (gs-pop! gs-stack))
+    (println `(gs-+ ,first ,second))
+    (gs-push! gs-stack (+ first second)))
+  (define (gs-- gs-stack)
+    (define second (gs-pop! gs-stack))
+    (gs-push! gs-stack (- (gs-pop! gs-stack) second)))
+  (define (gs-* gs-stack)
+    (define second (gs-pop! gs-stack))
+    (gs-push! gs-stack (* (gs-pop! gs-stack) second)))
+  
