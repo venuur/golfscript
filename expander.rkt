@@ -21,7 +21,6 @@
 (struct stack-mark (id))
 (struct gs-block-data (proc repr))
 
-
 ;;; Module begin.
 (define-macro (golfscript-module-begin PROGRAM)
   #'(#%module-begin
@@ -247,7 +246,7 @@
     [(gs-block-data? top)
      (let-values ([(arg2 arg1) (values (gs-pop! a-stack) (gs-pop! a-stack))])
        (let* ([key-proc (gs-block-data-proc arg2)]
-              [cmp (λ (x y) (gs-lt (key-proc) (key-proc)))])
+              [cmp (λ (x y) (gs-lt key-proc x y))])
          (cond
            [(string? arg1)
             (gs-push! a-stack (list->string (sort (string->list arg1) cmp)))]
@@ -256,6 +255,16 @@
     [else (begin
             (define arg (gs-pop! a-stack))
             (last (take (a-stack) arg)))]))
+
+(define (gs-lt key-func x y)
+  (parameterize ([gs-stack empty])
+    (gs-push! gs-stack x)
+    (gs-push! gs-stack y)
+    (key-func)
+    (let ([fy (gs-pop! gs-stack)])
+      (key-func)
+      (let ([fx (gs-pop! gs-stack)])
+        (fx . < . fy)))))
 
 (define (gs-@ a-stack)
   (define-values (arg3 arg2 arg1)
