@@ -5,3 +5,5 @@
 compiled/
 /doc/
 *.bak
+scratch.rkt
+*.1

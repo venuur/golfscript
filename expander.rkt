@@ -1,4 +1,4 @@
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 #lang br
 
 (provide (rename-out [golfscript-module-begin #%module-begin]
@@ -7,8 +7,9 @@
 (provide (matching-identifiers-out #rx"^gs-" (all-defined-out)))
 
 ;;; Rquires for gs-~ definition.
-(require golfscript/parser golfscript/tokenizer brag/support)
-(require racket/block)
+(require "parser.rkt" "tokenizer.rkt")
+(require brag/support)
+(require racket/block racket/string)
 
 ;;; Global data and data types.
 (define gs-stack (make-parameter empty))
@@ -27,7 +28,6 @@
      (provide gs-program-result gs-stack)
      (define-namespace-anchor gs-runtime-ns)
      (parameterize ([current-namespace (namespace-anchor->namespace gs-runtime-ns)])
-       (displayln (namespace-mapped-symbols (current-namespace)))
        PROGRAM)))
 
 ;;; Top
@@ -132,14 +132,25 @@
   result)
 
 (define (gs-display value)
-  (if (gs-block-data? value)
-      (display (gs-block-data-repr value))
-      (display value)))
+  (cond
+    [(gs-block-data? value)
+     (display (gs-block-data-repr value))]
+    [(list? value)
+     (display "[")
+     (let loop ([to-show value])
+       (cond
+         [(empty? to-show) (display "]")]
+         [else
+          (gs-display (first to-show))
+          (unless (empty? (rest to-show))
+            (display " "))
+          (loop (rest to-show))]))]
+    [else (display value)]))
 
 (define (stack-height) (length (gs-stack)))
 
 (define (gs-push! a-stack value)
-  (displayln `(gs-push! ,a-stack ,value))
+  (displayln `(gs-push! ,(a-stack) ,value))
   (a-stack (cons value (a-stack))))
 
 (define (gs-pop! a-stack #:return-stack-mark? [return-stack-mark? #f])
@@ -239,6 +250,26 @@
     1
     0)))
 
+(define (gs-@ a-stack)
+  (define-values (arg3 arg2 arg1)
+    (values (gs-pop! a-stack) (gs-pop! a-stack) (gs-pop! a-stack)))
+  (gs-push! a-stack arg2)
+  (gs-push! a-stack arg3)
+  (gs-push! a-stack arg1))
+  
+(define (gs-+ gs-stack)
+  (define second (gs-pop! gs-stack))
+  (define first (gs-pop! gs-stack))
+  (println `(gs-+ ,first ,second))
+  (gs-push! gs-stack (+ first second)))
+(define (gs-- gs-stack)
+  (define second (gs-pop! gs-stack))
+  (gs-push! gs-stack (- (gs-pop! gs-stack) second)))
+(define (gs-* gs-stack)
+  (define second (gs-pop! gs-stack))
+  (gs-push! gs-stack (* (gs-pop! gs-stack) second)))
+
+
 (define (gs-$ a-stack)
   (define top (gs-peek a-stack))
   (cond
@@ -247,14 +278,18 @@
      (let-values ([(arg2 arg1) (values (gs-pop! a-stack) (gs-pop! a-stack))])
        (let* ([key-proc (gs-block-data-proc arg2)]
               [cmp (λ (x y) (gs-lt key-proc x y))])
-         (cond
-           [(string? arg1)
-            (gs-push! a-stack (list->string (sort (string->list arg1) cmp)))]
-           [(list? arg1) (gs-push! a-stack (sort arg1 cmp))])))]
+         ; First arg must be a list.
+         (gs-push! a-stack (sort arg1 cmp))))]
+    ; string arg. Sort alphabetically
     ; integer. Index value off stack and copy to top.
+    [(string? top)
+     (let ([arg (string->list (gs-pop! a-stack))])
+       (gs-push! a-stack (list->string (sort arg char<?))))]
     [else (begin
             (define arg (gs-pop! a-stack))
-            (last (take (a-stack) arg)))]))
+            ; Golfscript zero indexes, so 0 is top of stack.
+            ; For take, 1 is top of stack.
+            (gs-push! a-stack (last (take (a-stack) (add1 arg)))))]))
 
 (define (gs-lt key-func x y)
   (parameterize ([gs-stack empty])
@@ -265,23 +300,3 @@
       (key-func)
       (let ([fx (gs-pop! gs-stack)])
         (fx . < . fy)))))
-
-(define (gs-@ a-stack)
-  (define-values (arg3 arg2 arg1)
-    (values (gs-pop! a-stack) (gs-pop! a-stack) (gs-pop! a-stack)))
-  (gs-push! a-stack arg2)
-  (gs-push! a-stack arg3)
-  (gs-push! a-stack arg1))
-  
-  (define (gs-+ gs-stack)
-    (define second (gs-pop! gs-stack))
-    (define first (gs-pop! gs-stack))
-    (println `(gs-+ ,first ,second))
-    (gs-push! gs-stack (+ first second)))
-  (define (gs-- gs-stack)
-    (define second (gs-pop! gs-stack))
-    (gs-push! gs-stack (- (gs-pop! gs-stack) second)))
-  (define (gs-* gs-stack)
-    (define second (gs-pop! gs-stack))
-    (gs-push! gs-stack (* (gs-pop! gs-stack) second)))
-  

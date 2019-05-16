@@ -4,7 +4,6 @@
 (require rackunit/text-ui)
 (require racket/sandbox)
 
-
 (define (eval-golfscript script-body)
   (let* ([script (string-join (list "#lang golfscript" script-body) "\n")]
          [evaluator (call-with-trusted-sandbox-configuration
@@ -69,6 +68,8 @@
   (test-suite
    "$ operator"
    (check-script-output "1 2 3 4 5 1$" "123454")
+   (check-script-output "'asdf'$" "adfs")
+   (check-script-output "[5 4 3 1 2]{-1*}$ " "[5 4 3 2 1]")
    ))
 
 
