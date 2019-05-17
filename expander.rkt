@@ -1,15 +1,27 @@
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 #lang br
 
-(provide (rename-out [golfscript-module-begin #%module-begin]
-                     [golfscript-top #%top]))
-(provide #%app #%datum #%top-interaction require)
-(provide (matching-identifiers-out #rx"^gs-" (all-defined-out)))
+(provide
+ ;; Special macros
+ (rename-out [golfscript-module-begin #%module-begin]
+                     [golfscript-top #%top])
+ #%app #%datum #%top-interaction require
+
+ ;; Global data
+ gs-program-result
+
+ ;; Core syntax
+ gs-program gs-eval gs-var gs-string gs-block gs-block-repr gs-list gs-assignment
+ gs-comment
+
+ ;; Core functions
+ gs-string-repr gs-display-stack gs-push! gs-pop! gs-val
+)
 
 ;;; Rquires for gs-~ definition.
 (require "parser.rkt" "tokenizer.rkt")
 (require brag/support)
-(require racket/block racket/string)
+(require racket/block racket/string racket/contract)
 
 ;;; Global data and data types.
 (define gs-stack (make-parameter empty))
@@ -125,7 +137,7 @@
   (define result
     (string-trim
      (with-output-to-string
-       (λ () (until (empty? (gs-stack)) (gs-display (gs-pop!  gs-stack)))))
+       (λ () (for ([el (gs-stack)]) (gs-display el))))
      "\""))
   (displayln "RESULT")
   (displayln result)
@@ -187,13 +199,46 @@
 (define (gs-peek a-stack)
   (first (a-stack)))
 
-(define (gs-builtin? a-var)
-  (hash-has-key? builtins a-var))
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Type conversions
+;;
+;; Type prority (low -> high)
+;; integer -> array -> string -> block
+;;
+;; Types are represented as symbols of the same name
 
-(define (gs-builtin! a-var)
-  ((hash-ref builtins a-var)))
+;; Promote two arguments to highest common type
+;; any::t1 any::t2 -> max(t1,t2) max(t1,t2)
+(define (gs-promote arg1 arg2)
+  (let ([type-arg1 (gs-type arg1)]
+        [type-arg2 (gs-type arg2)])
+    (let ([type-max (gs-type-max type-arg1 type-arg2)])
+      (values (gs-convert type-max arg1)
+              (gs-convert type-max arg2)))))
 
-;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Return type of argument as symbol
+;; One of '(integer array string block)
+(provide
+ (contract-out
+  [gs-type (-> (or/c number? list? string? gs-block-data?) symbol?)]))
+(define (gs-type arg)
+  (cond
+    [(number? arg) 'integer]
+    [(list? arg) 'array]
+    [(string? arg) 'string]
+    [(gs-block-data? arg) 'block]))
+
+;; Return higher priority type of its two arguments.
+(define (gs-type-max arg1 arg2)
+  (void)
+  )
+
+;; Convert argument to type.
+(define (gs-convert type arg)
+  (void)
+  )
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Builtin golfscript functions. All are mutating because they pop args from the stack.
 ;;; It's not explicit in the tutorial, but args are ordered left to right, not
 ;;; in the order they are popped. So in a two argument function, the second argument
@@ -215,9 +260,17 @@
   (let ([arg (gs-pop! gs-stack)])
     (cond
       [(number? arg) (gs-push! gs-stack (bitwise-not arg))]
-      [(string? arg) (eval `(gs-eval ,@(cdr (parse-to-datum (apply-tokenizer make-tokenizer arg)))))]
+      [(string? arg) (gs-eval-string arg)]
       [(gs-block-data? arg) ((gs-block-data-proc arg))]
       [(list? arg) (for ([i (in-list arg)]) (gs-push! gs-stack i))])))
+
+(define (gs-eval-string str)
+  (eval `(gs-eval ,@(cdr (parse-to-datum (apply-tokenizer make-tokenizer str))))))
+
+(define (gs-string->block str)
+  (gs-block-data
+   (lambda () (gs-eval-string str))
+   (string-append "{" str "}")))
 
 (define (gs-backtick gs-stack)
   (define arg (gs-pop! gs-stack))
@@ -257,11 +310,6 @@
   (gs-push! a-stack arg3)
   (gs-push! a-stack arg1))
   
-(define (gs-+ gs-stack)
-  (define second (gs-pop! gs-stack))
-  (define first (gs-pop! gs-stack))
-  (println `(gs-+ ,first ,second))
-  (gs-push! gs-stack (+ first second)))
 (define (gs-- gs-stack)
   (define second (gs-pop! gs-stack))
   (gs-push! gs-stack (- (gs-pop! gs-stack) second)))
@@ -300,3 +348,23 @@
       (key-func)
       (let ([fx (gs-pop! gs-stack)])
         (fx . < . fy)))))
+
+(define (gs-+ gs-stack)
+  (define second (gs-pop! gs-stack))
+  (define first (gs-pop! gs-stack))
+  (println `(gs-+ ,first ,second))
+  (gs-push! gs-stack (+ first second)))
+
+(define (gs-list-append left right)
+  (append* left right))
+
+(define (gs-string-append left right)
+  (string-append left right))
+
+(define (gs-block-append left right)
+  (define (block-body a-block)
+    (let ([repr (gs-block-data-repr a-block)])
+      (substring repr 1 (string-length repr))))
+  (let ([left-body (block-body left)]
+        [right-body (block-body right)])
+    (gs-string->block (string-append left-body " " right-body))))
