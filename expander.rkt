@@ -4,7 +4,7 @@
 (provide
  ;; Special macros
  (rename-out [golfscript-module-begin #%module-begin]
-                     [golfscript-top #%top])
+             [golfscript-top #%top])
  #%app #%datum #%top-interaction require
 
  ;; Global data
@@ -16,12 +16,29 @@
 
  ;; Core functions
  gs-string-repr gs-display-stack gs-push! gs-pop! gs-val
-)
+ )
 
 ;;; Rquires for gs-~ definition.
 (require "parser.rkt" "tokenizer.rkt")
 (require brag/support)
 (require racket/block racket/string racket/contract)
+
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Type constants and contracts.
+;; Type prority (low -> high)
+;; integer -> array -> string -> block
+;;
+;; Types are represented as symbols of the same name
+(struct gs-block-data (proc repr))
+(define gs-integer? integer?)
+(define gs-array? list?)
+(define gs-string? string?)
+(define gs-block? gs-block-data?)
+
+(define type-priority-list '(integer array string block))
+(define gs-value/c (or/c gs-integer? gs-array? gs-string? gs-block?))
+(define gs-type/c (lambda (x) (member x type-priority-list)))
+
 
 ;;; Global data and data types.
 (define gs-stack (make-parameter empty))
@@ -32,7 +49,6 @@
 (define gs-namespace (make-parameter (make-empty-namespace)))
 (define-namespace-anchor gs-expander-ns)
 (struct stack-mark (id))
-(struct gs-block-data (proc repr))
 
 ;;; Module begin.
 (define-macro (golfscript-module-begin PROGRAM)
@@ -93,14 +109,12 @@
   (define (gs-string-repr arg)
     (cond
       ; No need to address procedures because gs-block-repr handles that.
-      [(number? arg) (number->string arg)]
+      [(integer? arg) (number->string arg)]
       ; Check for list delimiters before strings, because they look like strings.
       [(or (equal? arg "[") (equal? arg "]")) arg]
       [(string? arg) (string-append "\"" arg "\"")]
       [(symbol? arg) (symbol->string arg)]
-      [(list? arg) (string-append "["
-                                  (string-join (map gs-string-repr arg) " ")
-                                  "]")])))
+      [(list? arg) (string-append "[" (string-join (map gs-string-repr arg) " ") "]")])))
 
 (define-macro-cases gs-list
   [(gs-list "[")
@@ -145,9 +159,9 @@
 
 (define (gs-display value)
   (cond
-    [(gs-block-data? value)
+    [(gs-block? value)
      (display (gs-block-data-repr value))]
-    [(list? value)
+    [(gs-array? value)
      (display "[")
      (let loop ([to-show value])
        (cond
@@ -187,10 +201,10 @@
   (display "gs-val ")
   (displayln a-var)
   (cond
-    [(gs-block-data? a-var) ((gs-block-data-proc a-var gs-stack))]
+    [(gs-block? a-var) ((gs-block-data-proc a-var gs-stack))]
     [(procedure? a-var) (a-var gs-stack)]
     ;; Numbers have their literal value as their default value.
-    [(number? a-var) (gs-push! gs-stack a-var)]
+    [(gs-integer? a-var) (gs-push! gs-stack a-var)]
     ;; Undefined values are ignored. Otherwise we push the new vlaue to the stack.
     [(not (void? a-var)) (gs-push! gs-stack a-var)]
     ))
@@ -220,23 +234,63 @@
 ;; One of '(integer array string block)
 (provide
  (contract-out
-  [gs-type (-> (or/c number? list? string? gs-block-data?) symbol?)]))
+  [gs-type (-> gs-value/c gs-type/c)]))
 (define (gs-type arg)
   (cond
-    [(number? arg) 'integer]
-    [(list? arg) 'array]
-    [(string? arg) 'string]
-    [(gs-block-data? arg) 'block]))
+    [(gs-integer? arg) 'integer]
+    [(gs-array? arg) 'array]
+    [(gs-string? arg) 'string]
+    [(gs-block? arg) 'block]))
 
 ;; Return higher priority type of its two arguments.
-(define (gs-type-max arg1 arg2)
-  (void)
-  )
+(provide
+ (contract-out
+  [gs-type-max (-> gs-type/c gs-type/c gs-type/c)]))
+(define (gs-type-max type1 type2)
+  (define (type-priority type)
+    (index-of type-priority-list  type))
+  (let ([type1-priority (type-priority type1)]
+        [type2-priority (type-priority type2)])
+    (list-ref type-priority-list (max type1-priority type2-priority))))
 
-;; Convert argument to type.
+;; Convert argument up to type.
+(provide
+ (contract-out
+  [gs-convert (-> gs-type/c gs-value/c gs-value/c)]))
 (define (gs-convert type arg)
-  (void)
-  )
+  (define arg-type (gs-type arg))
+  (cond
+    [(equal? arg-type 'integer (gs-convert-integer type arg))]
+    [(equal? arg-type 'array (gs-convert-array type arg))]
+    [(equal? arg-type 'string (gs-convert-string type arg))]
+    ; Only block is left, and we never convert a block down, only up, so it
+    ; passes through
+    [else arg]))
+
+; Convert integer up to specified type.
+(provide
+ (contract-out
+  [gs-convert-integer (-> gs-type/c gs-integer? gs-value/c)]))
+(define (gs-convert-integer type arg)
+  (cond
+    [(equal? type 'integer) arg]
+    [(equal? type 'array) (list arg)]
+    [(equal? type 'string) (number->string arg)]
+    [(equal? type 'block) (gs-string->block (number->string arg))]))
+
+; Convert array up to specified type.
+(define (gs-convert-array type arg)
+  (void))
+
+; Convert string up to specified type, which can only be a block.
+(define (gs-convert-string type arg)
+  (void))
+
+(define (gs-string->block str)
+  (gs-block-data
+   (lambda () (gs-eval-string str))
+   (string-append "{" str "}")))
+
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;;; Builtin golfscript functions. All are mutating because they pop args from the stack.
@@ -259,37 +313,31 @@
   (writeln "gs-tilde")
   (let ([arg (gs-pop! gs-stack)])
     (cond
-      [(number? arg) (gs-push! gs-stack (bitwise-not arg))]
-      [(string? arg) (gs-eval-string arg)]
-      [(gs-block-data? arg) ((gs-block-data-proc arg))]
-      [(list? arg) (for ([i (in-list arg)]) (gs-push! gs-stack i))])))
+      [(gs-integer? arg) (gs-push! gs-stack (bitwise-not arg))]
+      [(gs-string? arg) (gs-eval-string arg)]
+      [(gs-block? arg) ((gs-block-data-proc arg))]
+      [(gs-array? arg) (for ([i (in-list arg)]) (gs-push! gs-stack i))])))
 
 (define (gs-eval-string str)
   (eval `(gs-eval ,@(cdr (parse-to-datum (apply-tokenizer make-tokenizer str))))))
-
-(define (gs-string->block str)
-  (gs-block-data
-   (lambda () (gs-eval-string str))
-   (string-append "{" str "}")))
-
 (define (gs-backtick gs-stack)
   (define arg (gs-pop! gs-stack))
   (define arg-repr
     (cond
-      [(gs-block-data? arg) (gs-block-data-repr arg)]
+      [(gs-block? arg) (gs-block-data-repr arg)]
       [else (gs-string-repr arg)]))
   (gs-push! gs-stack (gs-string-repr arg-repr)))
 
 (define (gs-string-repr arg)
   (cond
     ; No need to address procedures because gs-backtick handles that.
-    [(number? arg) (number->string arg)]
+    [(gs-integer? arg) (number->string arg)]
     ; Check for list delimiters before strings, because they look like strings.
     [(or (equal? arg "[") (equal? arg "]")) arg]
-    [(string? arg) (string-append "\"" arg "\"")]
-    [(list? arg) (string-append "["
-                                (string-join (map gs-string-repr arg) " ")
-                                "]")]))
+    [(gs-string? arg) (string-append "\"" arg "\"")]
+    [(gs-array? arg) (string-append "["
+                                    (string-join (map gs-string-repr arg) " ")
+                                    "]")]))
 
 (define (gs-! a-stack)
   (define arg (gs-pop! a-stack))
@@ -299,7 +347,7 @@
     (or (equal? arg 0)
         (equal? arg empty)
         (equal? arg "")
-        (and (gs-block-data? arg) (equal? (gs-block-data-repr arg) "{}")))
+        (and (gs-block? arg) (equal? (gs-block-data-repr arg) "{}")))
     1
     0)))
 
@@ -322,7 +370,7 @@
   (define top (gs-peek a-stack))
   (cond
     ; list block or string block. Sort by block as key function.
-    [(gs-block-data? top)
+    [(gs-block? top)
      (let-values ([(arg2 arg1) (values (gs-pop! a-stack) (gs-pop! a-stack))])
        (let* ([key-proc (gs-block-data-proc arg2)]
               [cmp (λ (x y) (gs-lt key-proc x y))])
@@ -330,7 +378,7 @@
          (gs-push! a-stack (sort arg1 cmp))))]
     ; string arg. Sort alphabetically
     ; integer. Index value off stack and copy to top.
-    [(string? top)
+    [(gs-string? top)
      (let ([arg (string->list (gs-pop! a-stack))])
        (gs-push! a-stack (list->string (sort arg char<?))))]
     [else (begin
