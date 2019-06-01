@@ -356,6 +356,7 @@
 
 (define (gs-eval-string str)
   (eval `(gs-eval ,@(cdr (parse-to-datum (apply-tokenizer make-tokenizer str))))))
+
 (define (gs-backtick)
   (define arg (gs-pop!))
   (define arg-repr
@@ -433,13 +434,18 @@
         (fx . < . fy)))))
 
 (define (gs-+)
-  (define second (gs-pop!))
-  (define first (gs-pop!))
-  (println `(gs-+ ,first ,second))
-  (gs-push! (+ first second)))
+  (let* ([arg2 (gs-pop!)]
+         [arg1 (gs-pop!)])
+    (let-values ([(arg1 arg2) (gs-promote arg1 arg2)])
+      (println `(gs-+ ,first ,second))
+      (cond
+        [(gs-integer? arg1) (gs-push! (+ arg1 arg2))]
+        [(gs-array? arg1) (gs-push! (gs-list-append arg1 arg2))]
+        [(gs-string? arg1) (gs-push! (gs-string-append arg1 arg2))]
+        [(gs-block? arg1) (gs-push! (gs-block-append arg1 arg2))]))))
 
 (define (gs-list-append left right)
-  (append* left right))
+  (append left right))
 
 (define (gs-string-append left right)
   (string-append left right))

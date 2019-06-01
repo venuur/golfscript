@@ -25,12 +25,6 @@
    (check-script-output "\"1 2+\"~" "3")
    ))
 
-(define test-add-op
-  (test-suite
-   "+ operator"
-   (check-script-output "1 2+" "3")
-   ))
-
 (define test-at-op
   (test-suite
    "@ operator"
@@ -71,17 +65,25 @@
    (check-script-output "[5 4 3 1 2]{-1*}$ " "[5 4 3 2 1]")
    ))
 
+(define test-add-op
+  (test-suite
+   "+ operator"
+   (check-script-output "1 2+" "3")
+   (check-script-output "5 7+" "12")
+   (check-script-output "'asdf'{1234}+" "{asdf 1234}")
+   (check-script-output "[1 2 3][4 5]+" "[1 2 3 4 5]")
+   ))
 
 (define test-builtins
   (test-suite
    "Builtins"
    test-tilde-op
-   test-add-op
    test-at-op
    test-backtick-op
    test-comments
    test-exclamation-op
    test-dollar-op
+   test-add-op
    ))
 
 (run-tests test-builtins)
