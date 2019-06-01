@@ -1,8 +1,7 @@
 #lang racket
 
-(require rackunit)
-(require rackunit/text-ui)
-(require racket/sandbox)
+(require rackunit rackunit/text-ui
+         racket/sandbox)
 
 (define (eval-golfscript script-body)
   (let* ([script (string-join (list "#lang golfscript" script-body) "\n")]

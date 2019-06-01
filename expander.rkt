@@ -85,21 +85,21 @@
   (syntax/loc caller-stx (gs-val VAR)))
 
 (define-macro (gs-string STRING)
-  (syntax/loc caller-stx (gs-push! gs-stack STRING)))
+  (syntax/loc caller-stx (gs-push! STRING)))
 
 (define-macro-cases gs-block
   [(gs-block EXPR1 EXPRN ...)
    (syntax/loc caller-stx
-     (gs-push! gs-stack
-               (gs-block-data
-                (lambda () EXPR1 EXPRN ...)
-                (gs-block-repr (gs-block EXPR1 EXPRN ...)))))]
+     (gs-push!
+      (gs-block-data
+       (lambda () EXPR1 EXPRN ...)
+       (gs-block-repr (gs-block EXPR1 EXPRN ...)))))]
   [(gs-block)
    (syntax/loc caller-stx
-     (gs-push! gs-stack
-               (gs-block-data
-                (lambda () (void))
-                (gs-block-repr (gs-block)))))])
+     (gs-push!
+      (gs-block-data
+       (lambda () (void))
+       (gs-block-repr (gs-block)))))])
 
 (define-macro-cases gs-block-repr
   [(gs-block-repr (gs-block EXPR ...))
@@ -125,25 +125,25 @@
   [(gs-list "[")
    ;; Mark stack position, and pop everything between it and top of stack.
    (syntax/loc caller-stx
-     (gs-push! gs-stack (stack-mark (gensym))))]
+     (gs-push! (stack-mark (gensym))))]
   [(gs-list "]")
    ;; Pop until we reach a stack mark or stack is empty.
    (syntax/loc caller-stx
-     (let ([top (gs-pop! gs-stack #:return-stack-mark? #t)]
+     (let ([top (gs-pop! #:return-stack-mark? #t)]
            [return-list empty])
        (until (or (empty? (gs-stack)) (stack-mark? top))
               (set! return-list (cons top return-list))
-              (set! top (gs-pop! gs-stack #:return-stack-mark? #t)))
+              (set! top (gs-pop! #:return-stack-mark? #t)))
        ;; If the last pop was a stack-mark ignore it, but if not, add it in.
        (when (not (stack-mark? top))
          (set! return-list (cons top return-list)))
-       (gs-push! gs-stack return-list)))])
+       (gs-push! return-list)))])
 
 (define-macro (gs-assignment EXPR (gs-var VAR))
   (syntax/loc caller-stx
     (begin
       EXPR
-      (define VAR (gs-peek gs-stack)))))
+      (define VAR (gs-peek)))))
 
 (define-macro (gs-comment COMMENT)
   #'(void))
@@ -180,43 +180,43 @@
 
 (define (stack-height) (length (gs-stack)))
 
-(define (gs-push! a-stack value)
-  (displayln `(gs-push! ,(a-stack) ,value))
-  (a-stack (cons value (a-stack))))
+(define (gs-push! value)
+  (displayln `(gs-push! ,(gs-stack) ,value))
+  (gs-stack (cons value (gs-stack))))
 
-(define (gs-pop! a-stack #:return-stack-mark? [return-stack-mark? #f])
+(define (gs-pop! #:return-stack-mark? [return-stack-mark? #f])
   (if return-stack-mark?
-      (let ([top (first (a-stack))])
-        (a-stack (rest (a-stack)))
+      (let ([top (first (gs-stack))])
+        (gs-stack (rest (gs-stack)))
         top)
-      (let ([top (first (a-stack))]
+      (let ([top (first (gs-stack))]
             [found-stack-marks empty])
-        (a-stack (rest (a-stack)))
+        (gs-stack (rest (gs-stack)))
         (while (stack-mark? top)
                ;; Skip stack marks.
                (set! found-stack-marks (cons top found-stack-marks))
-               (set! top (first (a-stack)))
-               (a-stack (rest (a-stack))))
+               (set! top (first (gs-stack)))
+               (gs-stack (rest (gs-stack))))
         ;; Return any stack marks to the stack and return.
         (for ([mark (in-list found-stack-marks)])
-          (gs-push! a-stack mark))
+          (gs-push! mark))
         top)))
 
 (define (gs-val a-var)
   (display "gs-val ")
   (displayln a-var)
   (cond
-    [(gs-block? a-var) ((gs-block-data-proc a-var gs-stack))]
-    [(procedure? a-var) (a-var gs-stack)]
+    [(gs-block? a-var) ((gs-block-data-proc a-var))]
+    [(procedure? a-var) (a-var)]
     ;; Numbers have their literal value as their default value.
-    [(gs-integer? a-var) (gs-push! gs-stack a-var)]
+    [(gs-integer? a-var) (gs-push! a-var)]
     ;; Undefined values are ignored. Otherwise we push the new vlaue to the stack.
-    [(not (void? a-var)) (gs-push! gs-stack a-var)]
+    [(not (void? a-var)) (gs-push! a-var)]
     ))
 
 
-(define (gs-peek a-stack)
-  (first (a-stack)))
+(define (gs-peek)
+  (first (gs-stack)))
 
 ;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 ;; Type conversions
@@ -345,24 +345,24 @@
                      [gs-* *]
                      ))
 
-(define (gs-tilde gs-stack)
+(define (gs-tilde)
   (writeln "gs-tilde")
-  (let ([arg (gs-pop! gs-stack)])
+  (let ([arg (gs-pop!)])
     (cond
-      [(gs-integer? arg) (gs-push! gs-stack (bitwise-not arg))]
+      [(gs-integer? arg) (gs-push! (bitwise-not arg))]
       [(gs-string? arg) (gs-eval-string arg)]
       [(gs-block? arg) ((gs-block-data-proc arg))]
-      [(gs-array? arg) (for ([i (in-list arg)]) (gs-push! gs-stack i))])))
+      [(gs-array? arg) (for ([i (in-list arg)]) (gs-push! i))])))
 
 (define (gs-eval-string str)
   (eval `(gs-eval ,@(cdr (parse-to-datum (apply-tokenizer make-tokenizer str))))))
-(define (gs-backtick gs-stack)
-  (define arg (gs-pop! gs-stack))
+(define (gs-backtick)
+  (define arg (gs-pop!))
   (define arg-repr
     (cond
       [(gs-block? arg) (gs-block-data-repr arg)]
       [else (gs-string-repr arg)]))
-  (gs-push! gs-stack (gs-string-repr arg-repr)))
+  (gs-push! (gs-string-repr arg-repr)))
 
 (define (gs-string-repr arg)
   (cond
@@ -375,10 +375,9 @@
                                     (string-join (map gs-string-repr arg) " ")
                                     "]")]))
 
-(define (gs-! a-stack)
-  (define arg (gs-pop! a-stack))
+(define (gs-!)
+  (define arg (gs-pop!))
   (gs-push!
-   a-stack
    (if
     (or (equal? arg 0)
         (equal? arg empty)
@@ -387,57 +386,57 @@
     1
     0)))
 
-(define (gs-@ a-stack)
+(define (gs-@)
   (define-values (arg3 arg2 arg1)
-    (values (gs-pop! a-stack) (gs-pop! a-stack) (gs-pop! a-stack)))
-  (gs-push! a-stack arg2)
-  (gs-push! a-stack arg3)
-  (gs-push! a-stack arg1))
+    (values (gs-pop!) (gs-pop!) (gs-pop!)))
+  (gs-push! arg2)
+  (gs-push! arg3)
+  (gs-push! arg1))
   
-(define (gs-- gs-stack)
-  (define second (gs-pop! gs-stack))
-  (gs-push! gs-stack (- (gs-pop! gs-stack) second)))
-(define (gs-* gs-stack)
-  (define second (gs-pop! gs-stack))
-  (gs-push! gs-stack (* (gs-pop! gs-stack) second)))
+(define (gs--)
+  (define second (gs-pop!))
+  (gs-push! (- (gs-pop!) second)))
+(define (gs-*)
+  (define second (gs-pop!))
+  (gs-push! (* (gs-pop!) second)))
 
 
-(define (gs-$ a-stack)
-  (define top (gs-peek a-stack))
+(define (gs-$)
+  (define top (gs-peek))
   (cond
     ; list block or string block. Sort by block as key function.
     [(gs-block? top)
-     (let-values ([(arg2 arg1) (values (gs-pop! a-stack) (gs-pop! a-stack))])
+     (let-values ([(arg2 arg1) (values (gs-pop!) (gs-pop!))])
        (let* ([key-proc (gs-block-data-proc arg2)]
               [cmp (λ (x y) (gs-lt key-proc x y))])
          ; First arg must be a list.
-         (gs-push! a-stack (sort arg1 cmp))))]
+         (gs-push! (sort arg1 cmp))))]
     ; string arg. Sort alphabetically
     ; integer. Index value off stack and copy to top.
     [(gs-string? top)
-     (let ([arg (string->list (gs-pop! a-stack))])
-       (gs-push! a-stack (list->string (sort arg char<?))))]
+     (let ([arg (string->list (gs-pop!))])
+       (gs-push! (list->string (sort arg char<?))))]
     [else (begin
-            (define arg (gs-pop! a-stack))
+            (define arg (gs-pop!))
             ; Golfscript zero indexes, so 0 is top of stack.
             ; For take, 1 is top of stack.
-            (gs-push! a-stack (last (take (a-stack) (add1 arg)))))]))
+            (gs-push! (last (take (gs-stack) (add1 arg)))))]))
 
 (define (gs-lt key-func x y)
   (parameterize ([gs-stack empty])
-    (gs-push! gs-stack x)
-    (gs-push! gs-stack y)
+    (gs-push! x)
+    (gs-push! y)
     (key-func)
-    (let ([fy (gs-pop! gs-stack)])
+    (let ([fy (gs-pop!)])
       (key-func)
-      (let ([fx (gs-pop! gs-stack)])
+      (let ([fx (gs-pop!)])
         (fx . < . fy)))))
 
-(define (gs-+ gs-stack)
-  (define second (gs-pop! gs-stack))
-  (define first (gs-pop! gs-stack))
+(define (gs-+)
+  (define second (gs-pop!))
+  (define first (gs-pop!))
   (println `(gs-+ ,first ,second))
-  (gs-push! gs-stack (+ first second)))
+  (gs-push! (+ first second)))
 
 (define (gs-list-append left right)
   (append* left right))
