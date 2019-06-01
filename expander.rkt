@@ -39,6 +39,11 @@
 (define gs-value/c (or/c gs-integer? gs-array? gs-string? gs-block?))
 (define gs-type/c (lambda (x) (member x type-priority-list)))
 
+;;; gs-block-data methods.
+(define (gs-block-body a-block)
+  (let ([repr (gs-block-data-repr a-block)])
+    (substring repr 1 (sub1 (string-length repr)))))
+
 
 ;;; Global data and data types.
 (define gs-stack (make-parameter empty))
@@ -223,6 +228,9 @@
 
 ;; Promote two arguments to highest common type
 ;; any::t1 any::t2 -> max(t1,t2) max(t1,t2)
+(provide
+ (contract-out
+  [gs-promote (-> gs-value/c gs-value/c (values gs-value/c gs-value/c))]))
 (define (gs-promote arg1 arg2)
   (let ([type-arg1 (gs-type arg1)]
         [type-arg2 (gs-type arg2)])
@@ -260,9 +268,9 @@
 (define (gs-convert type arg)
   (define arg-type (gs-type arg))
   (cond
-    [(equal? arg-type 'integer (gs-convert-integer type arg))]
-    [(equal? arg-type 'array (gs-convert-array type arg))]
-    [(equal? arg-type 'string (gs-convert-string type arg))]
+    [(equal? arg-type 'integer) (gs-convert-integer type arg)]
+    [(equal? arg-type 'array) (gs-convert-array type arg)]
+    [(equal? arg-type 'string) (gs-convert-string type arg)]
     ; Only block is left, and we never convert a block down, only up, so it
     ; passes through
     [else arg]))
@@ -279,12 +287,40 @@
     [(equal? type 'block) (gs-string->block (number->string arg))]))
 
 ; Convert array up to specified type.
+(provide
+ (contract-out
+  [gs-convert-array
+   (-> gs-type/c gs-array? (or/c gs-array? gs-string? gs-block?))]))
 (define (gs-convert-array type arg)
-  (void))
+  (cond
+    [(equal? type 'array) arg]
+    [(equal? type 'string)
+     (string-join (for/list ([el arg])
+                    (cond
+                      [(gs-integer? el) (list->string (list (integer->char el)))]
+                      [(gs-array? el) (gs-convert-array type el)]
+                      [(gs-string? el) el]
+                      [(gs-block? el) (gs-block-body el)]))
+                  "")]
+    [(equal? type 'block)
+     (gs-string->block
+      (string-join (for/list ([el arg])
+                     (cond
+                       [(gs-integer? el) (number->string el)]
+                       [(gs-array? el) (gs-convert-array 'string el)]
+                       [(gs-string? el) el]
+                       [(gs-block? el) (gs-block-data-repr el)]))
+                   " "))]))
 
 ; Convert string up to specified type, which can only be a block.
+(provide
+ (contract-out
+  [gs-convert-string
+   (-> gs-type/c gs-string? (or/c gs-string? gs-block?))]))
 (define (gs-convert-string type arg)
-  (void))
+  (cond
+    [(equal? type 'string) arg]
+    [(equal? type 'block) (gs-string->block arg)]))
 
 (define (gs-string->block str)
   (gs-block-data
@@ -410,9 +446,6 @@
   (string-append left right))
 
 (define (gs-block-append left right)
-  (define (block-body a-block)
-    (let ([repr (gs-block-data-repr a-block)])
-      (substring repr 1 (string-length repr))))
-  (let ([left-body (block-body left)]
-        [right-body (block-body right)])
+  (let ([left-body (gs-block-body left)]
+        [right-body (gs-block-body right)])
     (gs-string->block (string-append left-body " " right-body))))
